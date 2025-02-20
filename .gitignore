@@ -4,6 +4,10 @@
 *.dll
 *.so
 *.dylib
+*.env
+*.db
+*.json
+
 
 # Test binary, built with go test -c
 *.test
@@ -13,6 +17,7 @@
 
 # Dependency directories
 /vendor/
+/json-api-examples/
 
 # Go workspace file
 go.work
