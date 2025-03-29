@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
@@ -44,16 +46,18 @@ type LoginResponse struct {
 	} `json:"data"`
 }
 
+type StoredTokens struct {
+	AccessToken        string    `json:"accessToken"`
+	RefreshToken       string    `json:"refreshToken"`
+	AccessTokenExpiry  time.Time `json:"accessTokenExpiry"`
+	RefreshTokenExpiry time.Time `json:"refreshTokenExpiry"`
+}
+
 // response for API errors
 type ErrorResponse struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data"` //could be string or object
-}
-
-type StoredTokens struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
 }
 
 func RSAEncrypt(plainText string) (string, error) {
@@ -179,6 +183,10 @@ func loadTokensFromFile() (*StoredTokens, error) {
 	return &tokens, nil
 }
 
+// func fetchDataAndStore() error {
+
+// }
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -193,84 +201,161 @@ func main() {
 		log.Fatal("USERNAME, PASSWORD and DEVICE_SN must be set in .env file") // Ensure variables are set
 	}
 
-	//attempt to load tokens from file on startup
-	storedTokens, err := loadTokensFromFile()
+	//open db
+	db, err := sql.Open("sqlite3", "device_data.db")
 	if err != nil {
-		fmt.Println("Error loading tokens from file:", err)
+		log.Fatalf("Error opening database: %v", err)
 	}
+	defer db.Close()
 
-	var accessToken string
-	var refreshToken string
+	router := gin.Default()
 
-	if storedTokens != nil && storedTokens.AccessToken != "" && storedTokens.RefreshToken != "" {
-		accessToken = storedTokens.AccessToken
-		refreshToken = storedTokens.RefreshToken
-		fmt.Println("Tokens loaded from file.")
-	} else {
-		// no tokens in file or loading failed -login then
-		loginResponse, err := Login(username, password)
+	// serve static frontend files (HTML, CSS, JS)
+	router.Static("/static", "./static")
+
+	// Serve the index.html file when the root path is accessed
+	router.GET("/", func(c *gin.Context) {
+		c.File("./static/index.html")
+	})
+
+	router.POST("api/run_main", func(c *gin.Context) {
+		//attempt to load tokens from file on startup
+		storedTokens, err := loadTokensFromFile()
 		if err != nil {
-			fmt.Println("Login Error:", err)
+			fmt.Println("Error loading tokens from file:", err)
+		}
+
+		if storedTokens == nil || storedTokens.AccessToken == "" {
+			// no tokens in file or loading failed -login then
+			err := performLogin(username, password)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Initial login failed: %v", err)})
+				return
+			}
+			storedTokens, _ = loadTokensFromFile()
+			if storedTokens == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tokens after initial login"})
+			}
+
+		}
+		accessToken := storedTokens.AccessToken // Assign values if loaded from file
+		//refreshToken := storedTokens.RefreshToken             // Assign values if loaded from file
+		accessTokenExpiry := storedTokens.AccessTokenExpiry   // Assign expiry times if loaded from file
+		refreshTokenExpiry := storedTokens.RefreshTokenExpiry // Assign expiry times if loaded from file
+
+		//check if access token is expired or about to expire
+		if time.Now().Add(time.Minute).After(accessTokenExpiry) {
+			//check if refresh token is also expired
+			if time.Now().After(refreshTokenExpiry) {
+				fmt.Println("Access token and refresh token are expired. Please login again.")
+				//clear stored tokens to force new login
+				emptyTokens := &StoredTokens{}
+				saveTokensToFile(emptyTokens)
+				fmt.Println("Attempting to login again...")
+				err := performLogin(username, password)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Automatic login failed: %v", err)})
+					//handle login failure - maybe exit or retry after a delay
+					return
+				}
+				storedTokens, _ = loadTokensFromFile()
+				if storedTokens == nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tokens after automatic login"})
+					return
+				}
+				accessToken = storedTokens.AccessToken
+			}
+		} else {
+
+			fmt.Println("Access token expired, attempting refresh.")
+			newAccessToken, newRefreshToken, newAccessTokenExpiry, newRefreshTokenExpiry, refreshErr := RefreshAccessToken()
+			if refreshErr != nil {
+				fmt.Println("Refresh failed:", refreshErr)
+				fmt.Println("Attempting to log in again...")
+				// Clear stored tokens
+				emptyTokens := &StoredTokens{}
+				saveTokensToFile(emptyTokens)
+				err := performLogin(username, password) // Call a helper function for login
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Automatic login failed after refresh failure: %v", err)})
+					// Handle login failure
+					return
+				}
+				storedTokens, _ = loadTokensFromFile()
+				if storedTokens == nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tokens after login after refresh failure"})
+					return
+				}
+				accessToken = storedTokens.AccessToken
+			} else {
+				fmt.Println("Access token refreshed successfully.")
+				//update stored tokens with new access token and maybe new refresh token
+				newStoredTokens := &StoredTokens{
+					AccessToken:        newAccessToken,
+					RefreshToken:       newRefreshToken,
+					AccessTokenExpiry:  newAccessTokenExpiry,
+					RefreshTokenExpiry: newRefreshTokenExpiry,
+				}
+				saveTokensToFile(newStoredTokens)
+				accessToken = newAccessToken
+			}
+
+		}
+		//fetch device data history
+		fmt.Println("\n--- Fetching Device Data History ---")
+		currentTime := time.Now()
+		dateStr := currentTime.Format("2006-01-02")
+		//dateStr := "2025-03-24"
+		//targetTime := time.Date(2025, time.February, 20, 12, 0, 0, 0, time.UTC)
+		//dateStr := targetTime.Format("2006-01-02-15:04:05")
+		pageNum := "1"
+		pageSize := "50"
+
+		_, dataErr := FetchDeviceDataHistory(deviceSN, dateStr, pageNum, pageSize, accessToken)
+		if dataErr != nil {
+			fmt.Println("Error fetching device data history:", dataErr)
+		} else {
+			fmt.Println("Device Data History Fetch Successful!")
+
+		}
+
+		history, err := GetAllDeviceHistory(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching data from database"})
 			return
 		}
+		c.JSON(http.StatusOK, history)
+	})
 
-		fmt.Println("Login Successful!")
-		//fmt.Println(loginResponse)
-		accessToken = loginResponse.Data.AccessToken
-		refreshToken = loginResponse.Data.RefreshToken
-
-		//save tokens to file after successful login
-		tokensToSave := &StoredTokens{AccessToken: accessToken, RefreshToken: refreshToken}
-		if saveErr := saveTokensToFile(tokensToSave); saveErr != nil {
-			fmt.Println("Error saving tokens to file:", saveErr)
-		} else {
-			fmt.Println("Tokens saved to file.")
+	//API endpoint to get history
+	router.GET("/api/history", func(c *gin.Context) {
+		history, err := GetAllDeviceHistory(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching device from database"})
+			return
 		}
+		c.JSON(http.StatusOK, history)
+	})
+
+	//API endpoint to get history with filtering and pagination
+	router.GET("/api/history/filtered", func(c *gin.Context) {
+		dateStr := c.Query("date")
+		pageSizeStr := c.Query("pageSize")
+		pageNumStr := c.Query("pageNum")
+
+		history, err := GetDeviceHistory(db, dateStr, pageNumStr, pageSizeStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching filtered data from database"})
+			return
+		}
+		c.JSON(http.StatusOK, history)
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" //default
 	}
 
-	fmt.Printf("Access Token: %s\n", accessToken)
-	fmt.Printf("Refresh Token: %s\n", refreshToken)
-
-	//fetch device data history
-	fmt.Println("\n--- Fetching Device Data History ---")
-	currentTime := time.Now()
-	dateStr := currentTime.Format("2025-02-19")
-	pageNum := "1"
-	pageSize := "50"
-
-	_, dataErr := FetchDeviceDataHistory(deviceSN, dateStr, pageNum, pageSize, accessToken)
-	if dataErr != nil {
-		fmt.Println("Error fetching device data history:", dataErr)
-	} else {
-		fmt.Println("Device Data History Fetch Successful!")
-
-		// if len(dataHistoryResponse.Data.DataList) > 0 {
-		// 	fmt.Println("\n--- Device Data ---")
-		// 	fmt.Printf("%-15s %-15s %-20s %-20s %-20s %-20s %-20s %-25s %-35s\n",
-		// 		"DeviceSn", "PV Power(kWh)", "DataTime", "PV Input Power(W)", "AC Input Power(W)",
-		// 		"Battery Voltage(V)", "Battery Power(W)", "AC Output Power(W)", "AC Apparent Power(VA)") // Shortened header
-		// 	fmt.Printf("%-15s %-15s %-20s %-20s  %-20s %-20s %-20s %-25s %-35s\n",
-		// 		"---------", "--------------", "-------------------", "-------------------", "-------------------", "-------------------",
-		// 		"-------------------", "--------------------------", "-----------------------------------") // Shortened separator
-
-		// 	for _, data := range dataHistoryResponse.Data.DataList {
-		// 		fmt.Printf("%-15s %-15s %-20s %-20s %-20s %-20s %-20s %-25s %-35s\n",
-		// 			data.DeviceSn,
-		// 			data.EpvToday, // PV Power Today (kWh)
-		// 			data.DeviceDataTime,
-		// 			data.PvTotalPower,        // PV Input Power (W)
-		// 			data.AcTtlInpower,        // AC Input Power (W) - Total Grid Power
-		// 			data.EmsVoltage,          // Battery Voltage (V)
-		// 			data.EmsPower,            // Battery Power (W)
-		// 			data.AcTotalOutActPower,  // AC Output Power (W) - Total Backup Load Active Power
-		// 			data.AcTotalOutAppaPower, // Total AC Output Apparent Power (VA)
-		// 		)
-		// 	}
-		// } else {
-		// 	fmt.Println("\n--- No Device Data Records found in response ---")
-		// }
-	}
-
-	//fmt.Println("\n--- Ready to make API requests using Access Token ---")
-	//fmt.Println("Access Token:", accessToken) // Use this accessToken for subsequent API calls
+	fmt.Printf("Server listening on port %s...\n", port)
+	router.Run(":" + port)
 }

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Device History</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Device History</h1>
+
+    <button onClick="runMainFunction()">Fetch and Update Data</button>
+
+    <!-- <div id="filter-form">
+        <h2>Filter History</h2>
+        <label for="date">Date:</label>
+        <input type="text" id="date" name="date"><br><br>
+
+        <label for="pageSize">Page Size:</label>
+        <input type="number" id="pageSize" name="pageSize" value="10"><br><br>
+
+        <label for="pageNum">Page Number:</label>
+        <input type="number" id="pageNum" name="pageNum" value="1"><br><br>
+
+        <button onclick="fetchFilteredHistory()">Filter</button>
+    </div> -->
+
+    <div id="history-data">
+        <h2>History Data</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Timestamp</th>
+                    <th>PV Input Power (W)</th>
+                    <th>Battery Power (W)</th>
+                    <th>Battery Voltage (V)</th>
+                    <th>Load Power (W)</th>
+                    <th>Battery Percentage (%)</th>
+                    </tr>
+            </thead>
+            <tbody id="history-table-body">
+            </tbody>
+        </table>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

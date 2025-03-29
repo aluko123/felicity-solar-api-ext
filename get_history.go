@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,15 +14,13 @@ import (
 
 // DeviceData struct to represent only fields needed
 type DeviceData struct {
-	DeviceSn            string `json:"deviceSn"`            // Device serial number
-	EpvToday            string `json:"epvToday"`            // PV Power Today (kWh)
-	DeviceDataTime      string `json:"deviceDataTime"`      // Device data time string
-	PvTotalPower        string `json:"pvTotalPower"`        // PV Input Power (W)
-	AcTtlInpower        string `json:"acTtlInpower"`        // AC Input Power (W) - Total Grid Power
-	EmsVoltage          string `json:"emsVoltage"`          // Battery Voltage (V)
-	EmsPower            string `json:"emsPower"`            // Battery Power (W)
-	AcTotalOutActPower  string `json:"acTotalOutActPower"`  // AC Output Power (W) - Total Backup Load Active Power
-	AcTotalOutAppaPower string `json:"acTotalOutAppaPower"` // Total AC Output Apparent Power (VA)
+	DeviceSn       string `json:"deviceSn"`       // Device serial number
+	DeviceDataTime string `json:"deviceDataTime"` // Device data time string
+	PvTotalPower   string `json:"pvTotalPower"`   // PV Input Power (W)
+	EmsPower       string `json:"emsPower"`       // Battery Power (W)
+	EmsVoltage     string `json:"emsVoltage"`     // Battery Voltage (V)
+	AcOutputVolt   string `json:"acROutVolt"`     // AC Output Voltage (V)
+	AcOutputCurr   string `json:"acROutCurr"`     // AC Output Current (A)
 }
 
 // device data history response
@@ -46,12 +45,16 @@ func FetchDeviceDataHistory(deviceSn, dateStr, pageNum, pageSize, accessToken st
 		return nil, fmt.Errorf("error parsing URL: %w", err)
 	}
 
+	//fmt.Println(dateStr)
+
 	//add query params
 	queryParams := url.Values{}
 	queryParams.Add("dateStr", dateStr)
 	queryParams.Add("pageNum", pageNum)
 	queryParams.Add("pageSize", pageSize)
 	apiURL.RawQuery = queryParams.Encode()
+
+	//fmt.Println("Request URL:", apiURL.String())
 
 	req, err := http.NewRequest("GET", apiURL.String(), nil)
 	if err != nil {
@@ -127,14 +130,14 @@ func createDataTable(db *sql.DB) error {
 			CREATE TABLE IF NOT EXISTS device_data (
 					id INTEGER PRIMARY KEY AUTOINCREMENT,
 					device_sn TEXT,
-					pv_power_kwh REAL,
 					data_time TEXT,
 					pv_input_power_w REAL,
-					ac_input_power_w REAL,
-					battery_voltage_v REAL,
 					battery_power_w REAL,
-					ac_output_power_w REAL,
-					ac_apparent_power_va REAL,
+					battery_voltage_v REAL,
+					ac_output_voltage REAL,
+					ac_output_current REAL,
+					load_power_w REAL,
+					battery_percentage REAL,
 					log_time DATETIME DEFAULT CURRENT_TIMESTAMP
 					)	
 	`)
@@ -155,8 +158,7 @@ func logDataToDB(db *sql.DB, dataList []DeviceData) error {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO device_data(
-			device_sn, pv_power_kwh, data_time, pv_input_power_w, ac_input_power_w,
-			battery_voltage_v, battery_power_w, ac_output_power_w, ac_apparent_power_va
+			device_sn, data_time, pv_input_power_w, battery_power_w, battery_voltage_v, ac_output_voltage, ac_output_current, load_power_w, battery_percentage
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
@@ -165,16 +167,20 @@ func logDataToDB(db *sql.DB, dataList []DeviceData) error {
 	defer stmt.Close()
 
 	for _, data := range dataList {
+		load := parseFloat(data.AcOutputCurr) * parseFloat(data.AcOutputVolt)
+		battery := (170.0/11.0)*parseFloat(data.EmsVoltage) - (8642.0 / 11.0)
+		load_power_w := roundFloat(load, 2)
+		battery_percentage := roundFloat(battery, 2)
 		_, err := stmt.Exec(
-			data.DeviceSn,                        // device_sn TEXT
-			parseFloat(data.EpvToday),            // pv_power_kwh REAL
-			data.DeviceDataTime,                  // data_time TEXT
-			parseFloat(data.PvTotalPower),        // pv_input_power_w REAL
-			parseFloat(data.AcTtlInpower),        // ac_input_power_w REAL
-			parseFloat(data.EmsVoltage),          // battery_voltage_v REAL
-			parseFloat(data.EmsPower),            // battery_power_w REAL
-			parseFloat(data.AcTotalOutActPower),  // ac_output_power_w REAL
-			parseFloat(data.AcTotalOutAppaPower), // ac_apparent_power_va REAL
+			data.DeviceSn,                 // device_sn TEXT
+			data.DeviceDataTime,           // data_time TEXT
+			parseFloat(data.PvTotalPower), // pv_input_power_w REAL
+			parseFloat(data.EmsPower),     // battery_power_w REAL
+			parseFloat(data.EmsVoltage),   // battery_voltage_v REAL
+			parseFloat(data.AcOutputVolt), // ac_output_voltage REAL
+			parseFloat(data.AcOutputCurr), // ac_output_current REAL
+			load_power_w,                  //load_power_w REAL
+			battery_percentage,            //battery_percentage REAL
 		)
 		if err != nil {
 			return fmt.Errorf("error inserting data row: %w", err)
@@ -198,4 +204,9 @@ func parseFloat(s string) float64 {
 		return 0.0 // Return 0 on parse error, and log a warning
 	}
 	return f
+}
+
+func roundFloat(val float64, precision int) float64 {
+	ratio := math.Pow(10, float64(precision))
+	return math.Round(val*ratio) / ratio
 }
