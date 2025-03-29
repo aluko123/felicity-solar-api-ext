@@ -309,7 +309,7 @@ func main() {
 		//targetTime := time.Date(2025, time.February, 20, 12, 0, 0, 0, time.UTC)
 		//dateStr := targetTime.Format("2006-01-02-15:04:05")
 		pageNum := "1"
-		pageSize := "50"
+		pageSize := "10"
 
 		_, dataErr := FetchDeviceDataHistory(deviceSN, dateStr, pageNum, pageSize, accessToken)
 		if dataErr != nil {

@@ -1,8 +1,8 @@
 .git
 .gitignore
-.env
 docker-compose.yml
 Dockerfile
+#.env
 README.md
 tokens.json
 json-api-examples
