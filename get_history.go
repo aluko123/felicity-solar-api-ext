@@ -104,12 +104,44 @@ func FetchDeviceDataHistory(deviceSn, dateStr, pageNum, pageSize, accessToken st
 		return &responseData, nil
 	}
 
+	err = clearDeviceDataHistory(db)
+	if err != nil {
+		fmt.Println("Error during database clearing:", err)
+	}
+	fmt.Println("Device data history cleared successfully.")
+
 	err = logDataToDB(db, responseData.Data.DataList) //log data to database
 	if err != nil {
 		fmt.Println("Error logging data to database:", err)
 	}
 
 	return &responseData, nil
+}
+
+func clearDeviceDataHistory(db *sql.DB) error {
+	tx, err := db.Begin() //atomicity
+	if err != nil {
+		return fmt.Errorf("error starting transaction for clearing data: %v", err)
+	}
+	defer tx.Rollback() //rollback in case of errors
+
+	_, err = tx.Exec("DELETE FROM device_data")
+	if err != nil {
+		//fmt.Printf("error deleting data table: %v ---\n", err)
+		return fmt.Errorf("error clearing device data history: %w", err)
+	}
+
+	//reset auto-increment sequence
+	_, err = tx.Exec("DELETE FROM sqlite_sequence WHERE name = 'device_data'")
+	if err != nil {
+		return fmt.Errorf("error resetting sequence for device_data: %v", err)
+	}
+
+	if err = tx.Commit(); err != nil { //commit transaction is successful
+		return fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	return nil
 }
 
 // openOrCreateDB opens or creates a SQLite db
@@ -137,7 +169,7 @@ func createDataTable(db *sql.DB) error {
 					ac_output_voltage REAL,
 					ac_output_current REAL,
 					load_power_w REAL,
-					battery_percentage REAL,
+					battery_percentage INTEGER,
 					log_time DATETIME DEFAULT CURRENT_TIMESTAMP
 					)	
 	`)
@@ -170,7 +202,7 @@ func logDataToDB(db *sql.DB, dataList []DeviceData) error {
 		load := parseFloat(data.AcOutputCurr) * parseFloat(data.AcOutputVolt)
 		battery := (170.0/11.0)*parseFloat(data.EmsVoltage) - (8642.0 / 11.0)
 		load_power_w := roundFloat(load, 2)
-		battery_percentage := roundFloat(battery, 2)
+		battery_percentage := int(roundFloat(battery, 2))
 		_, err := stmt.Exec(
 			data.DeviceSn,                 // device_sn TEXT
 			data.DeviceDataTime,           // data_time TEXT
@@ -180,7 +212,7 @@ func logDataToDB(db *sql.DB, dataList []DeviceData) error {
 			parseFloat(data.AcOutputVolt), // ac_output_voltage REAL
 			parseFloat(data.AcOutputCurr), // ac_output_current REAL
 			load_power_w,                  //load_power_w REAL
-			battery_percentage,            //battery_percentage REAL
+			battery_percentage,            //battery_percentage INTEGER
 		)
 		if err != nil {
 			return fmt.Errorf("error inserting data row: %w", err)

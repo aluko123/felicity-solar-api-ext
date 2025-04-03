@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Battery Calibration Data</title>
+    <link rel="stylesheet" type="text/css" href="/static/calibration.css">
+</head>
+<body>
+    <div id="calibration-form">
+        <h2>Battery Calibration</h2>
+        <label for="voltage">Voltage (V):</label>
+        <input type="number" id="voltage" name="voltage"><br><br>
+
+        <label for="battery">Battery (%):</label>
+        <input type="number" id="battery" name="battery"><br><br>
+
+        <button onclick="recordCalibration()">Record</button>
+    </div>
+
+    <h2>Battery Calibration Records</h2>
+    <div id="calibration-data">
+        <!-- <h2>History Data</h2> -->
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Voltage (V)</th>
+                    <th>Battery Percentage (%)</th>
+                    <!-- <th>Timestamp</th> -->
+                    </tr>
+            </thead>
+            <tbody id="calibration-table-body">
+            </tbody>
+        </table>
+    </div>
+    <script src="/static/calibration_data.js"></script>
+</body>
+</html>

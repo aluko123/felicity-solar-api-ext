@@ -190,7 +190,7 @@ func loadTokensFromFile() (*StoredTokens, error) {
 func main() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal("Error loading .env file:", err)
 	}
 
 	username := os.Getenv("USERNAME")
@@ -212,6 +212,8 @@ func main() {
 
 	// serve static frontend files (HTML, CSS, JS)
 	router.Static("/static", "./static")
+
+	router.StaticFile("/calibration-data", "./static/calibration_data.html")
 
 	// Serve the index.html file when the root path is accessed
 	router.GET("/", func(c *gin.Context) {
@@ -305,7 +307,7 @@ func main() {
 		fmt.Println("\n--- Fetching Device Data History ---")
 		currentTime := time.Now()
 		dateStr := currentTime.Format("2006-01-02")
-		//dateStr := "2025-03-24"
+		//dateStr := "2025-04-03"
 		//targetTime := time.Date(2025, time.February, 20, 12, 0, 0, 0, time.UTC)
 		//dateStr := targetTime.Format("2006-01-02-15:04:05")
 		pageNum := "1"
@@ -350,6 +352,19 @@ func main() {
 		}
 		c.JSON(http.StatusOK, history)
 	})
+
+	router.POST("/api/calibrate_battery", CalibrateBatteryHandler(db))
+
+	//API endpoint to get calibration history
+	router.GET("/api/calibration_data", func(c *gin.Context) {
+		history, err := GetCalibrationHistory(db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching calibration data from database"})
+			return
+		}
+		c.JSON(http.StatusOK, history)
+	})
+	//router.GET("/api/calibration_data", GetCalibrationDataHandler(db))
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -19,16 +19,6 @@ async function fetchAllHistory() {
     displayHistory(data);
 }
 
-// async function fetchFilteredHistory() {
-//     const date = document.getElementById('date').value;
-//     const pageSize = document.getElementById('pageSize').value;
-//     const pageNum = document.getElementById('pageNum').value;
-
-//     const url = `/api/history/filtered?date=<span class="math-inline">\{date\}&pageSize\=</span>{pageSize}&pageNum=${pageNum}`;
-//     const response = await fetch(url);
-//     const data = await response.json();
-//     displayHistory(data);
-// }
 
 function displayHistory(historyData) {
     const tableBody = document.getElementById('history-table-body');
