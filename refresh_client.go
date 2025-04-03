@@ -99,21 +99,6 @@ func RefreshAccessToken() (newAccessToken, newRefreshToken string, newAccessToke
 	return refreshResponse.Data.AccessToken, refreshResponse.Data.RefreshToken, newAccessTokenExpiry, newRefreshTokenExpiry, nil
 }
 
-// func main() {
-// 	// ... (Get refreshTokenValue somehow - maybe from previous login or storage) ...
-// 	refreshTokenValue := "Bearer_eyJhbGciOiJIUzI1NiJ9.eyJpZCI6OTAyMTE1NDA0NDk4ODg5NiwiaWF0IjoxNzE4ODYzODM0fQ._dSC4TGSdeBrK7fbpHcijo23GohZcOK4SMUirToHP9811" // Replace with actual refresh token
-
-// 	tokenResponse, err := RefreshToken(refreshTokenValue)
-// 	if err != nil {
-// 		fmt.Println("Error:", err)
-// 		return
-// 	}
-
-//		fmt.Println("Refresh Token Success!")
-//		fmt.Printf("Access Token: %s\n", tokenResponse.Data.Token)
-//		fmt.Printf("Refresh Token: %s\n", tokenResponse.Data.RefreshToken)
-//		// ... use tokens ...
-//	}
 func performLogin(username, password string) error {
 	loginResponse, err := Login(username, password)
 	if err != nil {
