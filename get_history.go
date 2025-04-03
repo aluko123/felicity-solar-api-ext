@@ -200,10 +200,13 @@ func logDataToDB(db *sql.DB, dataList []DeviceData) error {
 
 	for _, data := range dataList {
 		load := parseFloat(data.AcOutputCurr) * parseFloat(data.AcOutputVolt)
-		battery := (170.0/11.0)*parseFloat(data.EmsVoltage) - (8642.0 / 11.0)
+		battery, err := CalibrateBatteryPercentage(db, parseFloat(data.EmsVoltage))
+		if err != nil {
+			return fmt.Errorf("error calcutaing battery percentage: %w", err)
+		}
 		load_power_w := roundFloat(load, 2)
-		battery_percentage := int(roundFloat(battery, 2))
-		_, err := stmt.Exec(
+		//battery_percentage := int(roundFloat(battery, 2))
+		_, err = stmt.Exec(
 			data.DeviceSn,                 // device_sn TEXT
 			data.DeviceDataTime,           // data_time TEXT
 			parseFloat(data.PvTotalPower), // pv_input_power_w REAL
@@ -212,7 +215,7 @@ func logDataToDB(db *sql.DB, dataList []DeviceData) error {
 			parseFloat(data.AcOutputVolt), // ac_output_voltage REAL
 			parseFloat(data.AcOutputCurr), // ac_output_current REAL
 			load_power_w,                  //load_power_w REAL
-			battery_percentage,            //battery_percentage INTEGER
+			battery,                       //battery_percentage INTEGER
 		)
 		if err != nil {
 			return fmt.Errorf("error inserting data row: %w", err)

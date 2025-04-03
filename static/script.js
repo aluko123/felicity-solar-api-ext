@@ -30,8 +30,8 @@ function displayHistory(historyData) {
         row.insertCell().textContent = item.TimeStamp;
         row.insertCell().textContent = item.PvTotalPower;
         row.insertCell().textContent = item.EmsPower;
-        row.insertCell().textContent = item.EmsVoltage;
         row.insertCell().textContent = item.LoadPower;
+        row.insertCell().textContent = item.EmsVoltage;
         row.insertCell().textContent = item.BatteryPercentage;
     });
 }

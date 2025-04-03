@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -123,4 +124,70 @@ func GetCalibrationHistory(db *sql.DB) ([]CalibrationRecord, error) {
 	}
 
 	return records, nil
+}
+
+func CalibrateBatteryPercentage(db *sql.DB, currentVoltage float64) (int, error) {
+	rows, err := db.Query("SELECT voltage, percentage FROM battery_calibration")
+	if err != nil {
+		log.Printf("Error querying calibration data from database: %v", err)
+		return 0, err
+	}
+	defer rows.Close()
+
+	var voltages []float64
+	var percentages []float64
+
+	for rows.Next() {
+		var voltage float64
+		var percentage int
+
+		if err := rows.Scan(&voltage, &percentage); err != nil {
+			log.Printf("Error scanning calibration data row: %v", err)
+			return 0, err
+		}
+		voltages = append(voltages, voltage)
+		percentages = append(percentages, float64(percentage))
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("Error during rows iteration: %v", err)
+		return 0, err
+	}
+
+	n := len(voltages)
+	if n < 2 {
+		return int((170.0/11.0)*currentVoltage - (8642.0 / 11.0)), nil
+	}
+
+	//linear regression algorithm to calibrate battery for given input
+	var sumX, sumY, sumXY, sumX2 float64
+	for i := 0; i < n; i++ {
+		sumX += voltages[i]
+		sumY += float64(percentages[i])
+		sumXY += voltages[i] * float64(percentages[i])
+		sumX2 += voltages[i] * voltages[i]
+	}
+
+	//calculate slope (m) and intercept(c)
+	numerator := float64(n)*sumXY - sumX*sumY
+	denominator := float64(n)*sumX2 - sumX*sumX
+
+	var slope float64
+	if denominator != 0 {
+		slope = numerator / denominator
+	}
+
+	intercept := (sumY - slope*sumX) / float64(n)
+
+	//calculate calibrated percentage
+	calibratedPercentage := slope*float64(currentVoltage) + intercept
+
+	if calibratedPercentage < 0 {
+		calibratedPercentage = 0
+	} else if calibratedPercentage > 100 {
+		calibratedPercentage = 100
+	}
+
+	return int(calibratedPercentage), nil
+
 }
