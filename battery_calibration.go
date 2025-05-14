@@ -4,10 +4,15 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"sort"
+	"strconv"
 	"time"
 
+	"github.com/cnkei/gospline"
 	"github.com/gin-gonic/gin"
+	"github.com/openacid/slimarray/polyfit"
 )
 
 type BatteryCalibrationInput struct {
@@ -47,6 +52,61 @@ func CalibrateBatteryHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, records)
+	}
+}
+
+func UpdateCalibrationDataHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id") //get id from url path
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid record ID"})
+			return
+		}
+
+		var input BatteryCalibrationInput
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		//test input log
+		log.Printf("Received PUT request for ID: %d, Voltage: %f, Percentage: %d", id, input.Voltage, input.Percentage)
+
+		result, err := db.Exec(
+			"UPDATE battery_calibration SET voltage = ?, percentage = ? WHERE id = ?",
+			input.Voltage,
+			input.Percentage,
+			id,
+		)
+
+		if err != nil {
+			log.Printf("Error updating calibration data: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update calibration data"})
+			return
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			log.Printf("Error getting rows affected after UPDATE: %v", err)
+		} else {
+			log.Printf("UPDATE query executed, rows affected: %d", rowsAffected)
+
+		}
+
+		var updatedRecord CalibrationRecord
+		err = db.QueryRow("SELECT id, voltage, percentage FROM battery_calibration WHERE id = ?", id).Scan(
+			&updatedRecord.ID, &updatedRecord.Voltage, &updatedRecord.Percentage,
+		)
+		if err != nil {
+			log.Printf("Error fetching update calibration data: %v", err)
+			c.JSON(http.StatusOK, gin.H{"message": "Calinration record updated successfully, but failed to fetch the updated record."})
+			return
+		}
+
+		log.Printf("Fetched updated record: %+v", updatedRecord)
+		c.JSON(http.StatusOK, updatedRecord)
+		//c.JSON(http.StatusOK, gin.H{"message": "Calibration record updated successfully"})
 	}
 }
 
@@ -154,14 +214,56 @@ func CalibrateBatteryPercentage(db *sql.DB, currentVoltage float64) (int, error)
 		return 0, err
 	}
 
+	var calibratedPercentage int
 	n := len(voltages)
-	if n < 2 {
-		return int((170.0/11.0)*currentVoltage - (8642.0 / 11.0)), nil
+
+	switch {
+	case n < 2:
+		calibratedPercentage = int((170.0/11.0)*currentVoltage - (8642.0 / 11.0))
+	case n == 2:
+		calibratedPercentage = linearRegression(voltages, percentages, n, currentVoltage)
+	case n <= 4:
+		calibratedPercentage = polynomialRegression(voltages, percentages, n, currentVoltage)
+	default:
+		calibratedPercentage = splineInterpolation(voltages, percentages, currentVoltage)
 	}
+
+	if calibratedPercentage < 0 {
+		calibratedPercentage = 0
+	} else if calibratedPercentage > 100 {
+		calibratedPercentage = 100
+	}
+
+	return calibratedPercentage, nil
+
+}
+
+func polynomialRegression(voltages, percentages []float64, n int, currentVoltage float64) int {
+
+	//degrees = n - 1
+	fit := polyfit.NewFit(voltages, percentages, n-1)
+
+	coefficients := fit.Solve()
+
+	if len(coefficients) != n {
+		log.Printf("failed to calculate coefficients for polynomial regression")
+		return 0
+	}
+
+	calibratedPercentage := 0.0
+	for i := 0; i <= n-1; i++ {
+		calibratedPercentage += coefficients[i] * math.Pow(currentVoltage, float64(i))
+	}
+
+	return int(calibratedPercentage)
+}
+
+// use linear regression if == 2
+func linearRegression(voltages, percentages []float64, n int, currentVoltage float64) int {
 
 	//linear regression algorithm to calibrate battery for given input
 	var sumX, sumY, sumXY, sumX2 float64
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sumX += voltages[i]
 		sumY += float64(percentages[i])
 		sumXY += voltages[i] * float64(percentages[i])
@@ -182,12 +284,30 @@ func CalibrateBatteryPercentage(db *sql.DB, currentVoltage float64) (int, error)
 	//calculate calibrated percentage
 	calibratedPercentage := slope*float64(currentVoltage) + intercept
 
-	if calibratedPercentage < 0 {
-		calibratedPercentage = 0
-	} else if calibratedPercentage > 100 {
-		calibratedPercentage = 100
+	return int(calibratedPercentage)
+}
+
+func splineInterpolation(voltages, percentages []float64, currentVoltage float64) int {
+
+	points := make(map[float64]float64)
+	for i := range len(voltages) {
+		points[voltages[i]] = percentages[i]
 	}
 
-	return int(calibratedPercentage), nil
+	sortedVoltages := make([]float64, 0, len(points))
+	for voltage := range points {
+		sortedVoltages = append(sortedVoltages, voltage)
+	}
 
+	sort.Float64s(sortedVoltages)
+
+	var corPercentages []float64
+
+	for _, v := range sortedVoltages {
+		corPercentages = append(corPercentages, points[v])
+	}
+
+	spline := gospline.NewCubicSpline(sortedVoltages, corPercentages)
+
+	return int(spline.At(currentVoltage))
 }

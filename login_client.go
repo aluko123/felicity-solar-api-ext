@@ -366,6 +366,8 @@ func main() {
 	})
 	//router.GET("/api/calibration_data", GetCalibrationDataHandler(db))
 
+	router.PUT("/api/calibration_data/:id", UpdateCalibrationDataHandler(db))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080" //default

@@ -2,36 +2,70 @@
 <html>
 <head>
     <title>Battery Calibration Data</title>
-    <link rel="stylesheet" type="text/css" href="/static/calibration.css">
+    <link rel="stylesheet" type="text/css" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" integrity="sha384-JcKb8q3iqJ61gNV9KGb8thSsNjpSL0n8PARn9HuZOnIxN0hoP+VmmDGMN5t9UJ0Z" crossorigin="anonymous">
+    <link rel="stylesheet" type="text/css" href="/static/calibration.css"> 
 </head>
 <body>
-    <div id="calibration-form">
-        <h2>Battery Calibration</h2>
-        <label for="voltage">Voltage (V):</label>
-        <input type="number" id="voltage" name="voltage"><br><br>
+    <div class="container">
+        <div id="calibration-form">
+            <h2>Battery Calibration</h2>
+            <div class="form-group">
+                <label for="voltage">Voltage (V):</label>
+                <input type="number"  class="form-control" id="voltage" name="voltage">
+            </div>
+            
+            <div class="form-group">
+                <label for="battery">Battery (%):</label>
+                <input type="number" class="form-control" id="battery" name="battery">
+            </div>
+            
+            <button type="button" class="btn btn-primary" onclick="recordCalibration()">Record</button>
+        </div>
 
-        <label for="battery">Battery (%):</label>
-        <input type="number" id="battery" name="battery"><br><br>
+        <h2>Battery Calibration Records</h2>
+        <div id="calibration-data">
+            <!-- <h2>History Data</h2> -->
+            <table class="table table-striped table-bordered">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Voltage (V)</th>
+                        <th>Battery Percentage (%)</th>
+                        <!-- <th>Timestamp</th> -->
+                        <th>Actions</th>
+                        </tr>
+                </thead>
+                <tbody id="calibration-table-body">
+                </tbody>
+            </table>
+        </div>
 
-        <button onclick="recordCalibration()">Record</button>
+        <div id="editModal" class="modal" >
+            <div class="modal-content">
+                <span class="close-button">&times;</span>
+                <h3>Edit Calibration Record</h3>
+                <input type="hidden" id="editRecordId">
+
+                <div class="form-group">
+                    <label for="editVoltage">Voltage (V):</label>
+                    <input type="number" class="form-control" id="editVoltage">
+                </div>
+                
+                <div class="form-group">
+                    <label for="editBattery">Battery (%):</label>
+                    <input type="number" class="form-control" id="editBattery">
+                </div>
+                
+                
+                <button type="button" class="btn btn-primary" onclick="saveEditedRecord()">Save Changes</button>
+            </div>
+        </div>
     </div>
+    
 
-    <h2>Battery Calibration Records</h2>
-    <div id="calibration-data">
-        <!-- <h2>History Data</h2> -->
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Voltage (V)</th>
-                    <th>Battery Percentage (%)</th>
-                    <!-- <th>Timestamp</th> -->
-                    </tr>
-            </thead>
-            <tbody id="calibration-table-body">
-            </tbody>
-        </table>
-    </div>
     <script src="/static/calibration_data.js"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-LtrjvnR4Twt/qOuYxE72wg7utmWzXtcrNA+YBkCxPkSSAAxpguG9FF9j+fe4osv+qpcVz7+Fdt" crossorigin="anonymous"></script>
+    <p><a href="/"> Go back to calibration form</a></p>
 </body>
 </html>

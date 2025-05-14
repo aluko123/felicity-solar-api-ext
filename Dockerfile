@@ -17,6 +17,8 @@ RUN go mod download
 #copy source code
 COPY . .
 
+#RUN ls -al /app
+
 #build app
 ENV CGO_ENABLED=1
 RUN go build -o main .

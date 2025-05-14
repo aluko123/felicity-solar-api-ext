@@ -6,6 +6,8 @@ async function runMainFunction() {
     if (response.ok) {
         const data = await response.json();
         displayHistory(data);
+        alert("History displayed successfully")
+
     } else{
         const errorData = await response.json();
         alert(`Error running main function: ${errorData.error}`);
@@ -17,6 +19,9 @@ async function fetchAllHistory() {
     const response = await fetch('/api/history');
     const data = await response.json();
     displayHistory(data);
+    // if (response.ok) {
+    //     alert("History displayed successfully")
+    // }
 }
 
 
